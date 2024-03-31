@@ -201,31 +201,41 @@
     _ins = [];
     _engine._allOuts = {};
     _engine._allIns = {};
-    var i, x;
+    var i, x, infoCopy;
     for (i = 0; i < _engine._outs.length; i++) {
       x = _engine._outs[i];
       if (_outsM[x.name]) continue;
       x.engine = _engine;
       _engine._allOuts[x.name] = x;
-      _jzz._info.outputs.push({
+      infoCopy = {
         id: x.name,
         name: x.name,
         manufacturer: x.manufacturer,
         version: x.version,
         engine: _engine._type
-      });
+      };
+      if (x.hasOwnProperty("deviceName")) {
+        infoCopy.deviceName = x.deviceName; // support multiple devices with the same name in the Jazz-Plugin and jazz-midi engine
+        infoCopy.deviceIndex = x.deviceIndex;
+      };
+      _jzz._info.outputs.push(infoCopy);
       _outs.push(x);
     }
     for (i = 0; i < _virtual._outs.length; i++) {
       x = _virtual._outs[i];
       if (_outsM[x.name]) continue;
-      _jzz._info.outputs.push({
+      infoCopy = {
         id: x.name,
         name: x.name,
         manufacturer: x.manufacturer,
         version: x.version,
         engine: x.type
-      });
+      };
+      if (x.hasOwnProperty("deviceName")) {
+        infoCopy.deviceName = x.deviceName; // support multiple devices with the same name in the Jazz-Plugin and jazz-midi engine
+        infoCopy.deviceIndex = x.deviceIndex;
+      };
+      _jzz._info.outputs.push(infoCopy);
       _outs.push(x);
     }
     for (i = 0; i < _engine._ins.length; i++) {
@@ -233,25 +243,35 @@
       if (_insM[x.name]) continue;
       x.engine = _engine;
       _engine._allIns[x.name] = x;
-      _jzz._info.inputs.push({
+      infoCopy = {
         id: x.name,
         name: x.name,
         manufacturer: x.manufacturer,
         version: x.version,
         engine: _engine._type
-      });
+      };
+      if (x.hasOwnProperty("deviceName")) {
+        infoCopy.deviceName = x.deviceName; // support multiple devices with the same name in the Jazz-Plugin and jazz-midi engine
+        infoCopy.deviceIndex = x.deviceIndex;
+      };
+      _jzz._info.inputs.push(infoCopy);
       _ins.push(x);
     }
     for (i = 0; i < _virtual._ins.length; i++) {
       x = _virtual._ins[i];
       if (_insM[x.name]) continue;
-      _jzz._info.inputs.push({
+      infoCopy = {
         id: x.name,
         name: x.name,
         manufacturer: x.manufacturer,
         version: x.version,
         engine: x.type
-      });
+      };
+      if (x.hasOwnProperty("deviceName")) {
+        infoCopy.deviceName = x.deviceName; // support multiple devices with the same name in the Jazz-Plugin and jazz-midi engine
+        infoCopy.deviceIndex = x.deviceIndex;
+      };
+      _jzz._info.inputs.push(infoCopy);
       _ins.push(x);
     }
     if (_jzz._watcher && _jzz._watcher._handles.length) {
@@ -840,11 +860,21 @@
       _engine._outs = [];
       _engine._ins = [];
       var i, x;
+      var uniqueName, nameCount, nameCounters = {};
       for (i = 0; (x = _engine._main.MidiOutInfo(i)).length; i++) {
-        _engine._outs.push({ type: _engine._type, name: x[0], manufacturer: x[1], version: x[2] });
+        nameCount = nameCounters.hasOwnProperty(x[0]) ? nameCounters[x[0]] : 0;
+        nameCount += 1;
+        nameCounters[x[0]] = nameCount;
+        uniqueName = nameCount > 1 ? x[0] + " #" + nameCount : x[0];
+        _engine._outs.push({ type: _engine._type, name: uniqueName, deviceName: x[0], deviceIndex: i, manufacturer: x[1], version: x[2] });
       }
+      nameCounters = {};
       for (i = 0; (x = _engine._main.MidiInInfo(i)).length; i++) {
-        _engine._ins.push({ type: _engine._type, name: x[0], manufacturer: x[1], version: x[2] });
+        nameCount = nameCounters.hasOwnProperty(x[0]) ? nameCounters[x[0]] : 0;
+        nameCount += 1;
+        nameCounters[x[0]] = nameCount;
+        uniqueName = nameCount > 1 ? x[0] + " #" + nameCount : x[0];
+        _engine._ins.push({ type: _engine._type, name: uniqueName, deviceName: x[0], deviceIndex: i, manufacturer: x[1], version: x[2] });
       }
       _postRefresh();
     };
@@ -867,14 +897,30 @@
           _closeAll: _closeAll,
           _receive: function(a) { if (a.length) this.plugin.MidiOutRaw(a.slice()); }
         };
+        if (_engine._allOuts[name].hasOwnProperty("deviceName")) {
+          impl.info.deviceName = _engine._allOuts[name].deviceName;
+          impl.info.deviceIndex = _engine._allOuts[name].deviceIndex;
+        };
         var plugin = _engine._pool[_engine._outArr.length];
         impl.plugin = plugin;
         _engine._outArr.push(impl);
         _engine._outMap[name] = impl;
       }
       if (!impl.open) {
-        var s = impl.plugin.MidiOutOpen(name);
-        if (s !== name) {
+        var s;
+        var deviceName = _engine._allOuts[name].deviceName;
+        if (name === deviceName) {
+          s = impl.plugin.MidiOutOpen(name);
+          console.log(`  Opened MIDI out device ${name} using name -> ${s}`);
+        }
+        else {
+          var deviceIndex = _engine._allOuts[name].deviceIndex;
+          if (deviceIndex != -1) {
+            s = impl.plugin.MidiOutOpen(deviceIndex);
+            console.log(`  Opened MIDI out device ${name} using index ${deviceIndex} -> ${s}`);
+          }
+        }
+        if (s !== deviceName) {
           if (s) impl.plugin.MidiOutClose();
           port._break(); return;
         }
@@ -910,6 +956,10 @@
             }
           }
         };
+        if (_engine._allIns[name].hasOwnProperty("deviceName")) {
+          impl.info.deviceName = _engine._allIns[name].deviceName;
+          impl.info.deviceIndex = _engine._allIns[name].deviceIndex;
+        };
         var makeHandle = function(x) { return function(t, a) { x.handle(t, a); }; };
         impl.onmidi = makeHandle(impl);
         var plugin = _engine._pool[_engine._inArr.length];
@@ -918,8 +968,20 @@
         _engine._inMap[name] = impl;
       }
       if (!impl.open) {
-        var s = impl.plugin.MidiInOpen(name, impl.onmidi);
-        if (s !== name) {
+        var s;
+        var deviceName = _engine._allIns[name].deviceName;
+        if (name === deviceName) {
+          s = impl.plugin.MidiInOpen(name, impl.onmidi);
+          console.log(`  Opened MIDI in device ${name} using name -> ${s}`);
+        }
+        else {
+          var deviceIndex = _engine._allIns[name].deviceIndex;
+          if (deviceIndex != -1) {
+            s = impl.plugin.MidiInOpen(deviceIndex, impl.onmidi);
+            console.log(`  Opened MIDI in device ${name} using index ${deviceIndex} -> ${s}`);
+          }
+        }
+        if (s !== deviceName) {
           if (s) impl.plugin.MidiInClose();
           port._break(); return;
         }
