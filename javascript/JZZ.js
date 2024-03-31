@@ -908,7 +908,7 @@
       }
       if (!impl.open) {
         var s;
-        var deviceName = _engine._allOuts[name].deviceName;
+        var deviceName = _engine._allOuts[name].hasOwnProperty("deviceName") ? _engine._allOuts[name].deviceName : name;
         if (name === deviceName) {
           s = impl.plugin.MidiOutOpen(name);
           console.log(`  Opened MIDI out device ${name} using name -> ${s}`);
@@ -969,7 +969,7 @@
       }
       if (!impl.open) {
         var s;
-        var deviceName = _engine._allIns[name].deviceName;
+        var deviceName = _engine._allIns[name].hasOwnProperty("deviceName") ? _engine._allIns[name].deviceName : name;
         if (name === deviceName) {
           s = impl.plugin.MidiInOpen(name, impl.onmidi);
           console.log(`  Opened MIDI in device ${name} using name -> ${s}`);
