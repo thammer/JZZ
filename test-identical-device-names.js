@@ -2,47 +2,85 @@ var JZZ = require('.');
 
 let inputs = [];
 
-async function onConnectDisconnet(changes)
+function addDeviceNamesToSet(set, changes)
 {
-  console.log("Changed devices:")
-  console.log("  Added inputs:");
-  changes.inputs.added.forEach( (info) => {
-    console.log("    " + info.name);
+  changes.forEach( (info) => {
+    set.add(info.deviceName)
   });
-  if (changes.inputs.added. length == 0)
-    console.log("    (none)");
+}
 
-  console.log("  Removed inputs:");
-  changes.inputs.removed.forEach( (info) => {
-    console.log("    " + info.name);
-  });
-  if (changes.inputs.removed. length == 0)
-    console.log("    (none)");
+async function onConnectDisconnect(changes)
+{
+  let s = "";
+  console.log("Device changes detected:")
 
-  console.log("  Added outputs:");
-  changes.outputs.added.forEach( (info) => {
-    console.log("    " + info.name);
-  });
-  if (changes.outputs.added. length == 0)
-  console.log("    (none)");
+  if (changes.inputs.added.length > 0)
+  {
+    changes.inputs.added.forEach( (info) => s += s.length != 0 ? ", " : "" + info.name );  
+    console.log("  Added inputs: " + s);
+  }
 
-  console.log("  Removed outputs:");
-  changes.outputs.removed.forEach( (info) => {
-    console.log("    " + info.name);
-  });
-  if (changes.outputs.removed. length == 0)
-    console.log("    (none)");
+  if (changes.inputs.removed.length > 0)
+  {
+    changes.inputs.removed.forEach( (info) => s += s.length != 0 ? ", " : "" + info.name );  
+    console.log("  Removed inputs: " + s);
+  }
 
-  console.log("Closing all inputs");
-  inputs.forEach( (input) => {
-    input.close();
-  });  
+  if (changes.outputs.added.length > 0)
+  {
+    changes.outputs.added.forEach( (info) => s += s.length != 0 ? ", " : "" + info.name );  
+    console.log("  Added outputs: " + s);
+  }
 
-  // The line below causes an infinite recursion loop, through _refresh and _postRefresh
-  // listenForMIDIInput(this);
-  
-  await flashZoomDevices(this);
-  await sendMIDIIdentityRequests(this);
+  if (changes.outputs.removed.length > 0)
+  {
+    changes.outputs.removed.forEach( (info) => s += s.length != 0 ? ", " : "" + info.name );  
+    console.log("  Removed outputs: " + s);
+  }
+
+  let inputNames = new Set();
+  let outputNames = new Set();
+  addDeviceNamesToSet(inputNames, changes.inputs.added);
+  addDeviceNamesToSet(inputNames, changes.inputs.removed);
+  addDeviceNamesToSet(outputNames, changes.outputs.added);
+  addDeviceNamesToSet(outputNames, changes.outputs.removed);
+
+  // Close all devices (except the removed device) with same deviceName as an added or removed device
+  // We need to close all devices before we re-open them again, because device names and device indexes 
+  // might have changed. This sometimes happens when you have multiple devices with the same name on the 
+  // Windows platform using the Windows Multimedia API).
+  for (let i=0; i<inputs.length; i++)
+  {
+    let input = inputs[i];
+    let inputName = input.info().name;
+    if ( inputNames.has(input.info().deviceName) && (changes.inputs.removed.findIndex((info) => info.name === inputName) === -1) )
+    {
+      console.log(`  Closing device ${inputName} because it has the same deviceName as an added or removed device`);
+      input.close();
+    }
+  }
+
+  // Re-open all devices (except the removed device) with same deviceName as an added or removed device
+  for (let i=0; i<inputs.length; i++)
+  {
+    let input = inputs[i];
+    let inputName = input.info().name;
+    if ( inputNames.has(input.info().deviceName) && (changes.inputs.removed.findIndex((info) => info.name === inputName) === -1) )
+    {
+      console.log(`  Re-opening device ${inputName} because it has the same deviceName as an added or removed device`);
+      input = this.openMidiIn(inputName);;
+      inputs[i] = input;
+      addInputListener(input);
+    }
+  }
+
+  console.log("");
+
+  await sendMIDIIdentityRequests(this, 200);
+  console.log("");
+
+  await flashZoomDevices(this, 250);
+  console.log("");
 }
 
 function sleep(timeoutMilliseconds)
@@ -62,7 +100,7 @@ async function sendMIDIIdentityRequests(midi, delayMilliSeconds = 300)
   {
     let info = midi.info().outputs[i];
     let output = midi.openMidiOut(i);
-    console.log(`  Sending MIDI identity request to device ${i}: ${info.name}`)
+    console.log(`  Sending MIDI identity request to device ${i}: "${info.name}"`)
     output.send(0xf0,0x7e,0x00,0x06,0x01,0xf7);
     output.close();
     await sleep(delayMilliSeconds);
@@ -80,7 +118,7 @@ async function flashZoomDevices(midi, delayMilliSeconds = 300)
     if (info.name.includes("ZOOM MS Series"))
     {
       let output = midi.openMidiOut(i);
-      console.log(`  Flashing tuner on MIDI device ${i + 1}, Zoom device ${deviceCounter}: ${output.name()}`)
+      console.log(`  Flashing tuner on MIDI device ${i + 1}, Zoom device ${deviceCounter}: "${output.name()}"`)
       for (let j=0; j<deviceCounter; j++) 
       {
         output.send(0xB0, 74, 127);
@@ -95,6 +133,15 @@ async function flashZoomDevices(midi, delayMilliSeconds = 300)
   };
 }
 
+function addInputListener(input)
+{
+  let inputName = input.info().name;
+  console.log(`  Listening for incoming MIDI messages from device "${inputName}"`);
+  input.connect(function(msg) {
+    console.log(`  Received MIDI message from device "${inputName}": ${msg.toString()}`);
+  });
+}
+
 function listenForMIDIInput(midi)
 {
   console.log(`Listening for MIDI input`);
@@ -104,10 +151,7 @@ function listenForMIDIInput(midi)
     let info = midi.info().inputs[i];
     let input = midi.openMidiIn(i);
     inputs.push(input);
-    console.log(`  Listening for incoming MIDI messages from device ${i}: ${info.name}`);
-    input.connect(function(msg) {
-      console.log(`  Received MIDI message from device ${i} "${info.name}": ${msg.toString()}`);
-    });
+    addInputListener(input);
   }
 }
 
@@ -126,11 +170,15 @@ JZZ().or('Cannot start MIDI engine!').and(async function(){
     console.log("  " + i + ": " + info.name);
   }
 
+  console.log("");
+
   listenForMIDIInput(this);
+  console.log("");
 
-  await sendMIDIIdentityRequests(this);
+  await sendMIDIIdentityRequests(this, 200);
+  console.log("");
 
-  await flashZoomDevices(this);
+  await flashZoomDevices(this, 250);
+  console.log("");
 
-
-}).onChange(onConnectDisconnet);
+}).onChange(onConnectDisconnect);
