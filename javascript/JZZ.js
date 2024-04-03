@@ -276,7 +276,9 @@
     }
     if (_jzz._watcher && _jzz._watcher._handles.length) {
       var diff = _diff(_insW, _outsW, _jzz._info.inputs, _jzz._info.outputs);
-       if (diff) {
+      _insW = _jzz._info.inputs;
+      _outsW = _jzz._info.outputs;
+      if (diff) {
         for (j = 0; j < diff.inputs.removed.length; j++) {
           x = _engine._inMap[diff.inputs.removed[j].name];
           if (x) x._closeAll();
@@ -285,11 +287,12 @@
           x = _engine._outMap[diff.outputs.removed[j].name];
           if (x) x._closeAll();
         }
-        _fireW(diff);
+          _fireW(diff);
       }
+    } else {
+      _insW = _jzz._info.inputs;
+      _outsW = _jzz._info.outputs;
     }
-    _insW = _jzz._info.inputs;
-    _outsW = _jzz._info.outputs;
   }
   function _refresh() {
     if (!this._bad) _engine._refresh(this);
