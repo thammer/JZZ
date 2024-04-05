@@ -323,7 +323,7 @@
         for (n = 0; n < etc.length; n++) if (q[i] + '' === n + '' || q[i] === etc[n].name || (q[i] instanceof Object && q[i].name === etc[n].name)) {
           a.push(etc[n]);
           etc.splice(n, 1);
-          n--;
+          break;
         }
       }
     }
